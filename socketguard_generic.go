@@ -2,8 +2,8 @@
 
 package socketguard
 
-import "errors"
+import "syscall"
 
 func (c *Config) control(fd uintptr) error {
-	return errors.New("socketguard: unsupported platform")
+	return syscall.ENOENT
 }

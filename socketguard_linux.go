@@ -3,10 +3,13 @@
 package socketguard
 
 import (
+	"errors"
 	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/benburkert/socketguard-go/noise"
 )
 
 const optCryptoInfo = 1
@@ -14,6 +17,10 @@ const optCryptoInfo = 1
 var ulpName = []byte{'s', 'o', 'c', 'k', 'e', 't', 'g', 'u', 'a', 'r', 'd', 0}
 
 func (c *Config) control(fd uintptr) error {
+	if c.OptName == 0 {
+		return errors.New("socketguard: OptName config required")
+	}
+
 	_, _, errno := syscall.Syscall6(syscall.SYS_SETSOCKOPT, fd, syscall.SOL_TCP,
 		unix.TCP_ULP, uintptr(unsafe.Pointer(&ulpName[0])), uintptr(len(ulpName)), 0)
 	if errno != 0 {
@@ -21,7 +28,8 @@ func (c *Config) control(fd uintptr) error {
 	}
 
 	info := cryptoInfo{
-		version:       uint16(c.Version),
+		minVersion:    c.Version.Min(),
+		maxVersion:    c.Version.Max(),
 		staticPublic:  c.StaticPublic,
 		staticPrivate: c.StaticPrivate,
 		peerPublic:    c.PeerPublic,
@@ -37,10 +45,11 @@ func (c *Config) control(fd uintptr) error {
 }
 
 type cryptoInfo struct {
-	version uint16
+	minVersion uint16
+	maxVersion uint16
 
-	staticPublic  [KeySize]byte
-	staticPrivate [KeySize]byte
-	peerPublic    [KeySize]byte
-	presharedKey  [KeySize]byte
+	staticPublic  [noise.KeySize]byte
+	staticPrivate [noise.KeySize]byte
+	peerPublic    [noise.KeySize]byte
+	presharedKey  [noise.KeySize]byte
 }

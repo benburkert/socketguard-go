@@ -5,24 +5,39 @@ import (
 	"io"
 	"net"
 	"syscall"
+	"time"
 
-	"golang.org/x/crypto/chacha20poly1305"
-	"golang.org/x/crypto/curve25519"
+	"github.com/benburkert/socketguard-go/noise"
 )
 
-const KeySize = chacha20poly1305.KeySize
+const (
+	Construction = "Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s"
+	Identifier   = "SocketGuard v1"
+
+	DefaultRekeyAfter  = 120 * time.Second
+	DefaultRejectAfter = 180 * time.Second
+)
+
+var DefaultVersion = noise.NewVersion(0, 0)
 
 type Config struct {
-	Version uint
+	Version noise.Version
 
-	StaticPublic  [KeySize]byte
-	StaticPrivate [KeySize]byte
+	StaticPublic  noise.Key
+	StaticPrivate noise.Key
 
-	PeerPublic [KeySize]byte
+	PeerPublic noise.Key
 
-	PresharedKey [KeySize]byte
+	PresharedKey noise.Key
+
+	RekeyAfter  time.Duration
+	RejectAfter time.Duration
+
+	Rand io.Reader
 
 	OptName uintptr
+
+	PreferGo bool
 }
 
 func (c *Config) Control(network, adress string, conn syscall.RawConn) error {
@@ -39,42 +54,44 @@ func (c *Config) Dialer() *net.Dialer {
 	}
 }
 
-func (c *Config) Listener(ln net.Listener) error {
+func (c *Config) Listener(ln net.Listener) (net.Listener, error) {
+	if c.PreferGo {
+		return &listener{
+			Listener: ln,
+
+			config: *c,
+		}, nil
+	}
+
 	sc, ok := ln.(syscall.Conn)
 	if !ok {
-		return net.UnknownNetworkError(ln.Addr().Network())
+		return nil, net.UnknownNetworkError(ln.Addr().Network())
 	}
 
 	rc, err := sc.SyscallConn()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return c.Control(ln.Addr().Network(), ln.Addr().String(), rc)
+	return ln, c.Control(ln.Addr().Network(), ln.Addr().String(), rc)
 }
 
 func Dial(ctx context.Context, network, addr string, config *Config) (net.Conn, error) {
 	switch network {
 	case "tcp", "tcp4", "tcp6":
+		if config.PreferGo {
+			netConn, err := new(net.Dialer).DialContext(ctx, network, addr)
+			if err != nil {
+				return nil, err
+			}
+
+			conn := Client(netConn, config)
+			return conn, conn.sendHandshakeInitiation()
+		}
 		return config.Dialer().DialContext(ctx, network, addr)
 	default:
 		return nil, net.UnknownNetworkError(network)
 	}
-}
-
-func GenerateKey(random io.Reader) (priv, pub [KeySize]byte, err error) {
-	if _, err = io.ReadFull(random, priv[:]); err != nil {
-		return priv, pub, err
-	}
-
-	// curve25519 clamp
-	priv[0] &= 248
-	priv[31] &= 127
-	priv[31] |= 64
-
-	curve25519.ScalarBaseMult(&pub, &priv)
-
-	return priv, pub, nil
 }
 
 func Listen(ctx context.Context, network, addr string, config *Config) (net.Listener, error) {
@@ -85,8 +102,22 @@ func Listen(ctx context.Context, network, addr string, config *Config) (net.List
 			return nil, err
 		}
 
-		return ln, config.Listener(ln)
+		return config.Listener(ln)
 	default:
 		return nil, net.UnknownNetworkError(network)
 	}
+}
+
+type listener struct {
+	net.Listener
+
+	config Config
+}
+
+func (l *listener) Accept() (net.Conn, error) {
+	conn, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	return Server(conn, &l.config), nil
 }
