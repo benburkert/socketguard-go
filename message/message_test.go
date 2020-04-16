@@ -23,9 +23,6 @@ var (
 	sEnc  = must.EncryptKey(sPub, kEnc)
 	rsEnc = must.EncryptKey(rsPub, kEnc)
 
-	c, rc       = must.GenerateCookie(), must.GenerateCookie()
-	cEnc, rcEnc = must.EncryptCookie(c, kEnc), must.EncryptCookie(rc, kEnc)
-
 	t    = noise.GenerateTimestamp()
 	tEnc = must.EncryptTimestamp(t, kEnc)
 
@@ -43,7 +40,6 @@ func TestHandshakeInitiation(t *testing.T) {
 					make([]byte, noise.KeySize),
 					make([]byte, noise.EncryptedVersionSize),
 					make([]byte, noise.EncryptedKeySize),
-					make([]byte, noise.EncryptedCookieSize),
 				),
 			),
 
@@ -58,7 +54,6 @@ func TestHandshakeInitiation(t *testing.T) {
 					ePub[:],
 					vEnc[:],
 					sEnc[:],
-					cEnc[:],
 				),
 			),
 
@@ -66,7 +61,6 @@ func TestHandshakeInitiation(t *testing.T) {
 				UnencryptedEphemeral: ePub,
 				EncryptedVersion:     vEnc,
 				EncryptedStatic:      sEnc,
-				EncryptedCookie:      cEnc,
 			},
 		},
 	}.test(t)
@@ -82,7 +76,6 @@ func TestHandshakeResponse(t *testing.T) {
 				must.Bytes(must.LenU32,
 					make([]byte, noise.KeySize),
 					make([]byte, noise.EncryptedVersionSize),
-					make([]byte, noise.EncryptedCookieSize),
 				),
 			),
 
@@ -96,14 +89,12 @@ func TestHandshakeResponse(t *testing.T) {
 				must.Bytes(must.LenU32,
 					rePub[:],
 					rvEnc[:],
-					rcEnc[:],
 				),
 			),
 
 			msg: &HandshakeResponse{
 				UnencryptedEphemeral: rePub,
 				EncryptedVersion:     rvEnc,
-				EncryptedCookie:      rcEnc,
 			},
 		},
 	}.test(t)

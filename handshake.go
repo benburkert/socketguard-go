@@ -33,13 +33,14 @@ type handshake struct {
 	version          noise.Version
 	ephemeralPrivate noise.Key
 	remoteEphemeral  noise.Key
-	remoteCookie     noise.Cookie
 	remoteTimestamp  noise.Timestamp
 	staticStatic     noise.Key
 
 	chainingKey noise.HashSum
 	hash        noise.HashSum
-	cookie      noise.Cookie
+
+	sendRekey noise.HashSum
+	recvRekey noise.HashSum
 }
 
 func (h *handshake) createInitiation(sPriv, sPub, rs noise.Key, version noise.Version) (*message.HandshakeInitiation, error) {
@@ -49,7 +50,6 @@ func (h *handshake) createInitiation(sPriv, sPub, rs noise.Key, version noise.Ve
 		chainingKey noise.HashSum
 		hash        noise.HashSum
 		key         noise.Key
-		cookie      noise.Cookie
 	)
 
 	chainingKey = initChainingKey
@@ -67,26 +67,20 @@ func (h *handshake) createInitiation(sPriv, sPub, rs noise.Key, version noise.Ve
 	/* es */
 	key = chainingKey.MixDH(ePriv, rs)
 
-	/* s */
-	msg.EncryptedStatic = hash.MixSealKey(key, sPub)
-
 	/* version */
 	msg.EncryptedVersion = hash.MixSealVersion(key, version)
+	key = chainingKey.MixVersion(version)
+
+	/* s */
+	msg.EncryptedStatic = hash.MixSealKey(key, sPub)
 
 	/* ss */
 	ss := sPriv.SharedSecret(rs)
 	key = chainingKey.MixKey(ss)
 
-	/* cookie */
-	if cookie, err = noise.GenerateCookie(h.rand); err != nil {
-		return nil, err
-	}
-	msg.EncryptedCookie = hash.MixSealCookie(key, cookie)
-
 	h.chainingKey = chainingKey
 	h.hash = hash
 	h.ephemeralPrivate = ePriv
-	h.cookie = cookie
 	h.staticStatic = ss
 	h.state = handshakeInitiated
 
@@ -112,21 +106,18 @@ func (h *handshake) consumeInitiation(msg *message.HandshakeInitiation, sPriv, s
 	/* es */
 	key = chainingKey.MixDH(sPriv, e)
 
-	/* s */
-	s := hash.MixOpenKey(key, msg.EncryptedStatic)
-
 	/* version */
 	v := hash.MixOpenVersion(key, msg.EncryptedVersion)
+	key = chainingKey.MixVersion(v)
+
+	/* s */
+	s := hash.MixOpenKey(key, msg.EncryptedStatic)
 
 	/* ss */
 	ss := sPriv.SharedSecret(s)
 	key = chainingKey.MixKey(ss)
 
-	/* cookie */
-	cookie := hash.MixOpenCookie(key, msg.EncryptedCookie)
-
 	/* Success! Copy everything to handshake */
-	h.remoteCookie = cookie
 	h.remoteEphemeral = e
 	h.staticStatic = ss
 	h.version = v
@@ -161,19 +152,15 @@ func (h *handshake) createResponse(sPriv, sPub, rs, psk noise.Key) (*message.Han
 	/* se */
 	h.chainingKey.MixDH(ePriv, rs)
 
+	/* version */
+	msg.EncryptedVersion = h.hash.MixSealVersion(key, h.version)
+
 	/* psk */
 	tmpHash, key = h.chainingKey.MixPSK(psk)
 	h.hash.Mix(tmpHash[:])
 
-	/* version */
-	msg.EncryptedVersion = h.hash.MixSealVersion(key, h.version)
-
-	/* cookie */
-	if h.cookie, err = noise.GenerateCookie(h.rand); err != nil {
-		return nil, err
-	}
-	msg.EncryptedCookie = h.hash.MixSealCookie(key, h.cookie)
-
+	h.sendRekey = h.chainingKey
+	h.recvRekey = h.chainingKey
 	h.state = handshakeFinished
 	return &msg, nil
 }
@@ -195,16 +182,15 @@ func (h *handshake) consumeResponse(msg *message.HandshakeResponse, sPriv, psk n
 	/* se */
 	h.chainingKey.MixDH(sPriv, e)
 
+	/* version */
+	h.version = h.hash.MixOpenVersion(key, msg.EncryptedVersion)
+
 	/* psk */
 	hash, key = h.chainingKey.MixPSK(psk)
 	h.hash.Mix(hash[:])
 
-	/* version */
-	h.version = h.hash.MixOpenVersion(key, msg.EncryptedVersion)
-
-	/* cookie */
-	h.remoteCookie = h.hash.MixOpenCookie(key, msg.EncryptedCookie)
-
+	h.sendRekey = h.chainingKey
+	h.recvRekey = h.chainingKey
 	h.state = handshakeFinished
 	return nil
 }
@@ -218,7 +204,7 @@ func (h *handshake) createRekey(rs noise.Key) (*message.HandshakeRekey, error) {
 		key         noise.Key
 	)
 
-	chainingKey = initChainingKey
+	chainingKey = h.sendRekey
 	hash = initHash.Hash(rs[:])
 
 	/* e */
@@ -236,15 +222,13 @@ func (h *handshake) createRekey(rs noise.Key) (*message.HandshakeRekey, error) {
 	/* ss */
 	chainingKey.MixKey(h.staticStatic)
 
-	/* cookie */
-	key = chainingKey.MixCookie(h.remoteCookie)
-
 	/* {t} */
 	ts := noise.GenerateTimestamp()
 	msg.EncryptedTimestamp = hash.MixSealTimetstamp(key, ts)
 
 	/* Success! */
 	h.chainingKey = chainingKey
+	h.sendRekey = chainingKey
 	return &msg, nil
 }
 
@@ -255,7 +239,7 @@ func (h *handshake) consumeRekey(msg *message.HandshakeRekey, sPriv, sPub noise.
 		key         noise.Key
 	)
 
-	chainingKey = initChainingKey
+	chainingKey = h.recvRekey
 	hash = initHash.Hash(sPub[:])
 
 	/* e */
@@ -269,9 +253,6 @@ func (h *handshake) consumeRekey(msg *message.HandshakeRekey, sPriv, sPub noise.
 	/* ss */
 	chainingKey.MixKey(h.staticStatic)
 
-	/* cookie */
-	key = chainingKey.MixCookie(h.cookie)
-
 	/* {t} */
 	ts := hash.MixOpenTimestamp(key, msg.EncryptedTimestamp)
 	if !ts.After(h.remoteTimestamp) {
@@ -282,6 +263,7 @@ func (h *handshake) consumeRekey(msg *message.HandshakeRekey, sPriv, sPub noise.
 	h.remoteTimestamp = ts
 	h.hash = hash
 	h.chainingKey = chainingKey
+	h.recvRekey = chainingKey
 
 	return nil
 }

@@ -7,13 +7,6 @@ import (
 	"golang.org/x/crypto/poly1305"
 )
 
-func EncryptCookie(src noise.Cookie, key noise.Key) noise.EncryptedCookie {
-	var dst noise.EncryptedCookie
-	xor(dst[:noise.CookieSize], src[:], key[:noise.CookieSize])
-	mac(dst[noise.CookieSize:], dst[:noise.CookieSize], key)
-	return dst
-}
-
 func EncryptKey(src, key noise.Key) noise.EncryptedKey {
 	var dst noise.EncryptedKey
 	xor(dst[:noise.KeySize], src[:], key[:])
@@ -33,14 +26,6 @@ func EncryptVersion(v noise.Version, key noise.Key) noise.EncryptedVersion {
 	xor(dst[:noise.VersionSize], v[:], key[:noise.VersionSize])
 	mac(dst[noise.VersionSize:], dst[:noise.TimestampSize], key)
 	return dst
-}
-
-func GenerateCookie() noise.Cookie {
-	cookie, err := noise.GenerateCookie(rand.Reader)
-	if err != nil {
-		panic(err)
-	}
-	return cookie
 }
 
 func GenerateKey() noise.Key {

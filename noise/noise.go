@@ -18,13 +18,11 @@ var le = binary.LittleEndian
 
 const (
 	AuthTagSize   = poly1305.TagSize
-	CookieSize    = 16
 	HashSumSize   = blake2s.Size
 	KeySize       = chacha20poly1305.KeySize
 	TimestampSize = 8
 	VersionSize   = 8
 
-	EncryptedCookieSize    = CookieSize + AuthTagSize
 	EncryptedKeySize       = KeySize + AuthTagSize
 	EncryptedTimestampSize = TimestampSize + AuthTagSize
 	EncryptedVersionSize   = VersionSize + AuthTagSize
@@ -32,13 +30,11 @@ const (
 
 type (
 	AuthTag   [AuthTagSize]byte
-	Cookie    [CookieSize]byte
 	Key       [KeySize]byte
 	Timestamp [TimestampSize]byte
 	HashSum   [HashSumSize]byte
 	Version   [VersionSize]byte
 
-	EncryptedCookie    [EncryptedCookieSize]byte
 	EncryptedKey       [EncryptedKeySize]byte
 	EncryptedTimestamp [EncryptedTimestampSize]byte
 	EncryptedVersion   [EncryptedVersionSize]byte
@@ -48,11 +44,6 @@ func init() {
 	if chacha20poly1305.KeySize != curve25519.ScalarSize {
 		panic("impossible")
 	}
-}
-
-func GenerateCookie(random io.Reader) (Cookie, error) {
-	var cookie Cookie
-	return cookie, getRandom(cookie[:], random)
 }
 
 func GenerateKey(random io.Reader) (Key, error) {
@@ -132,10 +123,6 @@ func (h *HashSum) Mix(data []byte) {
 	copy(h[:], sum[:])
 }
 
-func (h *HashSum) MixCookie(cookie Cookie) Key {
-	return Key(h.MixKDF2(cookie[:]))
-}
-
 func (h *HashSum) MixDH(priv, pub Key) Key {
 	return h.MixKey(priv.SharedSecret(pub))
 }
@@ -168,12 +155,6 @@ func (h *HashSum) MixOpen(dst []byte, key Key, cipher []byte) {
 	h.Mix(cipher)
 }
 
-func (h *HashSum) MixOpenCookie(key Key, encCookie EncryptedCookie) Cookie {
-	var dst Cookie
-	h.MixOpen(dst[:0], key, encCookie[:])
-	return dst
-}
-
 func (h *HashSum) MixOpenKey(encKey Key, tgtKey EncryptedKey) Key {
 	var dst Key
 	h.MixOpen(dst[:0], encKey, tgtKey[:])
@@ -204,12 +185,6 @@ func (h *HashSum) MixSeal(dst []byte, key Key, plain []byte) {
 	h.Mix(dst)
 }
 
-func (h *HashSum) MixSealCookie(key Key, cookie Cookie) EncryptedCookie {
-	var dst EncryptedCookie
-	h.MixSeal(dst[:], key, cookie[:])
-	return dst
-}
-
 func (h *HashSum) MixSealKey(encKey, tgtKey Key) EncryptedKey {
 	var dst EncryptedKey
 	h.MixSeal(dst[:], encKey, tgtKey[:])
@@ -226,6 +201,10 @@ func (h *HashSum) MixSealVersion(key Key, version Version) EncryptedVersion {
 	var dst EncryptedVersion
 	h.MixSeal(dst[:], key, version[:])
 	return dst
+}
+
+func (h *HashSum) MixVersion(version Version) Key {
+	return Key(h.MixKDF2(version[:]))
 }
 
 func KDF1(key HashSum, data []byte) HashSum {

@@ -47,21 +47,19 @@ type HandshakeInitiation struct {
 	UnencryptedEphemeral noise.Key
 	EncryptedVersion     noise.EncryptedVersion
 	EncryptedStatic      noise.EncryptedKey
-	EncryptedCookie      noise.EncryptedCookie
 }
 
 func (h *HandshakeInitiation) Type() Type { return handshakeInitiation }
 
 func (h *HandshakeInitiation) Len() uint32 {
 	return noise.KeySize + noise.EncryptedKeySize +
-		noise.EncryptedVersionSize + noise.EncryptedCookieSize
+		noise.EncryptedVersionSize
 }
 
 func (h *HandshakeInitiation) pack(b []byte) []byte {
 	b = append(b, h.UnencryptedEphemeral[:]...)
 	b = append(b, h.EncryptedVersion[:]...)
 	b = append(b, h.EncryptedStatic[:]...)
-	b = append(b, h.EncryptedCookie[:]...)
 	return b
 }
 
@@ -69,44 +67,35 @@ func (h *HandshakeInitiation) unpack(b []byte) {
 	const (
 		versionOffset = noise.KeySize
 		staticOffset  = versionOffset + noise.EncryptedVersionSize
-		cookieOffset  = staticOffset + noise.EncryptedKeySize
 	)
 
 	copy(h.UnencryptedEphemeral[:], b)
 	copy(h.EncryptedVersion[:], b[versionOffset:])
 	copy(h.EncryptedStatic[:], b[staticOffset:])
-	copy(h.EncryptedCookie[:], b[cookieOffset:])
 }
 
 type HandshakeResponse struct {
 	UnencryptedEphemeral noise.Key
 	EncryptedVersion     noise.EncryptedVersion
-	EncryptedCookie      noise.EncryptedCookie
 }
 
 func (h *HandshakeResponse) Type() Type { return handshakeResponse }
 
 func (h *HandshakeResponse) Len() uint32 {
-	return noise.KeySize + noise.EncryptedVersionSize +
-		noise.EncryptedCookieSize
+	return noise.KeySize + noise.EncryptedVersionSize
 }
 
 func (h *HandshakeResponse) pack(b []byte) []byte {
 	b = append(b, h.UnencryptedEphemeral[:]...)
 	b = append(b, h.EncryptedVersion[:]...)
-	b = append(b, h.EncryptedCookie[:]...)
 	return b
 }
 
 func (h *HandshakeResponse) unpack(b []byte) {
-	const (
-		versionOffset = noise.KeySize
-		cookieOffset  = versionOffset + noise.EncryptedVersionSize
-	)
+	const versionOffset = noise.KeySize
 
 	copy(h.UnencryptedEphemeral[:], b)
 	copy(h.EncryptedVersion[:], b[versionOffset:])
-	copy(h.EncryptedCookie[:], b[cookieOffset:])
 }
 
 type HandshakeRekey struct {
