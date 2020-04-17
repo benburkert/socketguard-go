@@ -152,12 +152,13 @@ func (h *handshake) createResponse(sPriv, sPub, rs, psk noise.Key) (*message.Han
 	/* se */
 	h.chainingKey.MixDH(ePriv, rs)
 
-	/* version */
-	msg.EncryptedVersion = h.hash.MixSealVersion(key, h.version)
-
 	/* psk */
 	tmpHash, key = h.chainingKey.MixPSK(psk)
 	h.hash.Mix(tmpHash[:])
+
+	/* version */
+	msg.EncryptedVersion = h.hash.MixSealVersion(key, h.version)
+	h.chainingKey.MixVersion(h.version)
 
 	h.sendRekey = h.chainingKey
 	h.recvRekey = h.chainingKey
@@ -182,12 +183,13 @@ func (h *handshake) consumeResponse(msg *message.HandshakeResponse, sPriv, psk n
 	/* se */
 	h.chainingKey.MixDH(sPriv, e)
 
-	/* version */
-	h.version = h.hash.MixOpenVersion(key, msg.EncryptedVersion)
-
 	/* psk */
 	hash, key = h.chainingKey.MixPSK(psk)
 	h.hash.Mix(hash[:])
+
+	/* version */
+	h.version = h.hash.MixOpenVersion(key, msg.EncryptedVersion)
+	h.chainingKey.MixVersion(h.version)
 
 	h.sendRekey = h.chainingKey
 	h.recvRekey = h.chainingKey
