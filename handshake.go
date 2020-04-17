@@ -222,7 +222,7 @@ func (h *handshake) createRekey(rs noise.Key) (*message.HandshakeRekey, error) {
 	chainingKey.MixDH(ePriv, rs)
 
 	/* ss */
-	chainingKey.MixKey(h.staticStatic)
+	key = chainingKey.MixKey(h.staticStatic)
 
 	/* {t} */
 	ts := noise.GenerateTimestamp()
@@ -253,7 +253,7 @@ func (h *handshake) consumeRekey(msg *message.HandshakeRekey, sPriv, sPub noise.
 	chainingKey.MixDH(sPriv, e)
 
 	/* ss */
-	chainingKey.MixKey(h.staticStatic)
+	key = chainingKey.MixKey(h.staticStatic)
 
 	/* {t} */
 	ts := hash.MixOpenTimestamp(key, msg.EncryptedTimestamp)
